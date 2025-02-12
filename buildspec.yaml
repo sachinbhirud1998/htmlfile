@@ -11,15 +11,24 @@ phases:
 
   pre_build:
     commands:
+      - echo "Checking AWS regions variables..."
+      - echo "AWS_DEPLOY_REGIONS_w: $AWS_DEPLOY_REGIONS_w"
+      - echo "AWS_DEPLOY_REGIONS_e: $AWS_DEPLOY_REGIONS_e"
+
+      - AWS_DEPLOY_REGIONS_w=$(echo $AWS_DEPLOY_REGIONS_w | tr -d '[:space:]')
+      - AWS_DEPLOY_REGIONS_e=$(echo $AWS_DEPLOY_REGIONS_e | tr -d '[:space:]')
+
       - echo "Logging in to Amazon ECR in all regions..."
-      
+
       # Login to ECR for us-west-2
-      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_w | tr ',' ' '); do
+          echo "Logging into ECR in $REGION...";
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
         done
 
       # Login to ECR for us-east-1
-      - for REGION in $AWS_DEPLOY_REGIONS_e; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_e | tr ',' ' '); do
+          echo "Logging into ECR in $REGION...";
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
         done
 
@@ -33,12 +42,12 @@ phases:
       - echo "Tagging Docker image for deployment..."
       
       # Tag for us-west-2
-      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_w | tr ',' ' '); do
           docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
       # Tag for us-east-1
-      - for REGION in $AWS_DEPLOY_REGIONS_e; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_e | tr ',' ' '); do
           docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
@@ -47,19 +56,19 @@ phases:
       - echo "Pushing Docker image to all regions..."
       
       # Push to us-west-2
-      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_w | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
       # Push to us-east-1
-      - for REGION in $AWS_DEPLOY_REGIONS_e; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_e | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
       - echo "Starting sequential deployment to Kubernetes clusters..."
       
       # Deploy in us-west-2 first
-      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_w | tr ',' ' '); do
           echo "Updating EKS cluster in $REGION..."
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1
           
@@ -78,7 +87,7 @@ phases:
         done
 
       # Deploy in us-east-1 next
-      - for REGION in $AWS_DEPLOY_REGIONS_e; do
+      - for REGION in $(echo $AWS_DEPLOY_REGIONS_e | tr ',' ' '); do
           echo "Updating EKS cluster in $REGION..."
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1
           
