@@ -3,26 +3,26 @@ version: 0.2
 phases:
   install:
     commands:
-      - echo "Installing dependencies..."
-      - apt-get update -y && apt-get install -y apt-transport-https ca-certificates curl
-      - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-      - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-      - apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io
+      - "echo \"Installing dependencies...\""
+      - "apt-get update -y && apt-get install -y apt-transport-https ca-certificates curl"
+      - "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -"
+      - "add-apt-repository \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\""
+      - "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io"
 
   pre_build:
     commands:
-      - echo "Checking AWS regions variables..."
-      - echo "AWS_DEPLOY_REGIONS_w: $AWS_DEPLOY_REGIONS_w"
-      - echo "AWS_DEPLOY_REGIONS_e: $AWS_DEPLOY_REGIONS_e"
-      - export AWS_DEPLOY_REGIONS_w=$(echo "$AWS_DEPLOY_REGIONS_w" | tr -d '[:space:]')
-      - export AWS_DEPLOY_REGIONS_e=$(echo "$AWS_DEPLOY_REGIONS_e" | tr -d '[:space:]')
-      - echo "Logging in to Amazon ECR in all regions..."
-      - >
+      - "echo \"Checking AWS regions variables...\""
+      - "echo \"AWS_DEPLOY_REGIONS_w: $AWS_DEPLOY_REGIONS_w\""
+      - "echo \"AWS_DEPLOY_REGIONS_e: $AWS_DEPLOY_REGIONS_e\""
+      - "export AWS_DEPLOY_REGIONS_w=$(echo \"$AWS_DEPLOY_REGIONS_w\" | tr -d '[:space:]')"
+      - "export AWS_DEPLOY_REGIONS_e=$(echo \"$AWS_DEPLOY_REGIONS_e\" | tr -d '[:space:]')"
+      - "echo \"Logging in to Amazon ECR in all regions...\""
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           echo "Logging into ECR in $REGION...";
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
         done
-      - >
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           echo "Logging into ECR in $REGION...";
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
@@ -30,33 +30,33 @@ phases:
 
   build:
     commands:
-      - echo "Building Docker image..."
-      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
-      - docker build -t "${IMAGE_URI}" .
-      - echo "Tagging Docker image for deployment..."
-      - >
+      - "echo \"Building Docker image...\""
+      - "IMAGE_TAG=$(date +%Y%m%d%H%M%S)"
+      - "IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+      - "docker build -t \"${IMAGE_URI}\" ."
+      - "echo \"Tagging Docker image for deployment...\""
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           docker tag "${IMAGE_URI}" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
-      - >
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           docker tag "${IMAGE_URI}" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
   post_build:
     commands:
-      - echo "Pushing Docker image to all regions..."
-      - >
+      - "echo \"Pushing Docker image to all regions...\""
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
-      - >
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
-      - echo "Starting sequential deployment to Kubernetes clusters..."
-      - >
+      - "echo \"Starting sequential deployment to Kubernetes clusters...\""
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           echo "Updating EKS cluster in $REGION...";
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
@@ -65,7 +65,7 @@ phases:
           kubectl rollout status deployment/my-deployment --timeout=90s || exit 1;
           echo "Deployment successful in $REGION.";
         done
-      - >
+      - |
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           echo "Updating EKS cluster in $REGION...";
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
