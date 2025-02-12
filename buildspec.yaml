@@ -1,0 +1,46 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      docker: latest
+    commands:
+      - apt-get update -y
+      - apt-get install -y apt-transport-https ca-certificates curl
+      - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+      - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+      - apt-get update -y
+      - apt-get install -y docker-ce docker-ce-cli containerd.io
+      - curl -o aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.22.6/bin/linux/amd64/aws-iam-authenticator
+      - chmod +x ./aws-iam-authenticator
+      - mv ./aws-iam-authenticator /usr/local/bin/aws-iam-authenticator
+      - aws --version
+      - eksctl version
+      - kubectl version --client
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 8)
+      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+  build:
+    commands:
+      - echo Building Docker image...
+      - docker build -t ${IMAGE_URI} .
+  post_build:
+    commands:
+      - echo Pushing Docker image...
+      - docker push ${IMAGE_URI}
+      - echo Updating EKS deployments in multiple regions...
+      - |
+        for REGION in ${AWS_DEPLOY_REGIONS}; do
+          echo Updating kubeconfig for region $REGION;
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION;
+          echo Applying Kubernetes deployment;
+          kubectl set image deployment/my-deployment my-container=${IMAGE_URI} --record;
+        done
+      - echo Writing image definitions file...
+      - printf '[{"name":"%s","imageUri":"%s"}]' "${IMAGE_REPO_NAME}" "${IMAGE_URI}" > imagedefinitions.json
+      - cat imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
