@@ -12,6 +12,8 @@ phases:
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR in all regions..."
+      - echo "AWS_DEPLOY_REGIONS: $AWS_DEPLOY_REGIONS" # Debugging line
+      - if [ -z "$AWS_DEPLOY_REGIONS" ]; then echo "❌ ERROR: AWS_DEPLOY_REGIONS is empty!"; exit 1; fi
       - for REGION in $AWS_DEPLOY_REGIONS; do
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
         done
@@ -35,23 +37,27 @@ phases:
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
-      - echo "Updating Kubernetes deployment in all regions..."
-      - for REGION in $AWS_DEPLOY_REGIONS; do
-          echo "Updating EKS cluster in $REGION..."
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION;
-          
-          echo "Verifying Kubernetes context..."
-          kubectl config use-context my-cluster-$REGION || exit 1
-          kubectl config current-context || exit 1
-          kubectl cluster-info || exit 1
+      - echo "Deploying Kubernetes application in stages..."
 
-          echo "Deploying new image to Kubernetes..."
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1
-          
-          echo "Verifying deployment status..."
-          kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
-          
-          echo "Deployment successful in $REGION"
+      # Step 1: Deploy in the first region
+      - FIRST_REGION=$(echo $AWS_DEPLOY_REGIONS | awk '{print $1}')
+      - echo "Deploying in first region: $FIRST_REGION"
+      - aws eks update-kubeconfig --region $FIRST_REGION --name my-cluster-$FIRST_REGION --alias my-cluster-$FIRST_REGION || { echo "❌ ERROR: Failed to update kubeconfig for $FIRST_REGION"; exit 1; }
+      - kubectl config use-context my-cluster-$FIRST_REGION || exit 1
+      - kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$FIRST_REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1
+      - kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
+      - echo "✅ Deployment successful in $FIRST_REGION"
+
+      # Step 2: Deploy in remaining regions, one by one
+      - for REGION in $AWS_DEPLOY_REGIONS; do
+          if [ "$REGION" != "$FIRST_REGION" ]; then
+            echo "Switching to region: $REGION";
+            aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || { echo "❌ ERROR: Failed to update kubeconfig for $REGION"; exit 1; }
+            kubectl config use-context my-cluster-$REGION || exit 1
+            kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1
+            kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
+            echo "✅ Deployment successful in $REGION";
+          fi
         done
 
 artifacts:
