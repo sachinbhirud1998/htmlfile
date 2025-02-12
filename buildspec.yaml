@@ -35,10 +35,23 @@ phases:
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
-      - echo "Deploying to EKS clusters in multiple regions..."
+      - echo "Updating Kubernetes deployment in all regions..."
       - for REGION in $AWS_DEPLOY_REGIONS; do
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION;
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record;
+          echo "Updating EKS cluster in $REGION..."
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION;
+          
+          echo "Verifying Kubernetes context..."
+          kubectl config use-context my-cluster-$REGION || exit 1
+          kubectl config current-context || exit 1
+          kubectl cluster-info || exit 1
+
+          echo "Deploying new image to Kubernetes..."
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1
+          
+          echo "Verifying deployment status..."
+          kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
+          
+          echo "Deployment successful in $REGION"
         done
 
 artifacts:
