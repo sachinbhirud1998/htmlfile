@@ -12,7 +12,14 @@ phases:
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR in all regions..."
-      - for REGION in $AWS_DEPLOY_REGIONS; do
+      
+      # Login to ECR for us-west-2
+      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
+        done
+
+      # Login to ECR for us-east-1
+      - for REGION in $AWS_DEPLOY_REGIONS_e; do
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
         done
 
@@ -23,24 +30,40 @@ phases:
       - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
       - docker build -t ${IMAGE_URI} .
 
-      - echo "Tagging Docker image for multi-region deployment..."
-      - for REGION in $AWS_DEPLOY_REGIONS; do
+      - echo "Tagging Docker image for deployment..."
+      
+      # Tag for us-west-2
+      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+          docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+        done
+
+      # Tag for us-east-1
+      - for REGION in $AWS_DEPLOY_REGIONS_e; do
           docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
   post_build:
     commands:
       - echo "Pushing Docker image to all regions..."
-      - for REGION in $AWS_DEPLOY_REGIONS; do
+      
+      # Push to us-west-2
+      - for REGION in $AWS_DEPLOY_REGIONS_w; do
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+        done
+
+      # Push to us-east-1
+      - for REGION in $AWS_DEPLOY_REGIONS_e; do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
         done
 
       - echo "Starting sequential deployment to Kubernetes clusters..."
-      - for REGION in $AWS_DEPLOY_REGIONS; do
+      
+      # Deploy in us-west-2 first
+      - for REGION in $AWS_DEPLOY_REGIONS_w; do
           echo "Updating EKS cluster in $REGION..."
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1
           
-          echo "Verifying Kubernetes context..."
+          echo "Setting Kubernetes context..."
           kubectl config use-context my-cluster-$REGION || exit 1
           kubectl config current-context || exit 1
           kubectl cluster-info || exit 1
@@ -51,7 +74,26 @@ phases:
           echo "Verifying deployment status in $REGION..."
           kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
           
-          echo "Deployment successful in $REGION, proceeding to the next region..."
+          echo "Deployment successful in $REGION, proceeding to next region..."
+        done
+
+      # Deploy in us-east-1 next
+      - for REGION in $AWS_DEPLOY_REGIONS_e; do
+          echo "Updating EKS cluster in $REGION..."
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1
+          
+          echo "Setting Kubernetes context..."
+          kubectl config use-context my-cluster-$REGION || exit 1
+          kubectl config current-context || exit 1
+          kubectl cluster-info || exit 1
+
+          echo "Deploying new image to Kubernetes in $REGION..."
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1
+          
+          echo "Verifying deployment status in $REGION..."
+          kubectl rollout status deployment/my-deployment --timeout=90s || exit 1
+          
+          echo "Deployment successful in $REGION."
         done
 
 artifacts:
