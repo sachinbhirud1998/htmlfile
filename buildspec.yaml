@@ -22,23 +22,23 @@ phases:
   build:
     commands:
       - echo "Building Docker image..."
-      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
-      - docker build -t "${IMAGE_URI}" .
+      - export IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+      - export IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$IMAGE_TAG
+      - docker build -t "$IMAGE_URI" .
       - echo "Tagging Docker image..."
-      - docker tag "${IMAGE_URI}" ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
+      - docker tag "$IMAGE_URI" ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
 
   post_build:
     commands:
       - echo "Pushing Docker image..."
-      - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$IMAGE_TAG
       - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
       - echo "Updating Kubernetes deployment..."
       - aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name my-cluster-$AWS_DEFAULT_REGION --alias my-cluster-$AWS_DEFAULT_REGION
-      - kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record
+      - kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$IMAGE_TAG --record
       - kubectl rollout status deployment/my-deployment --timeout=90s
       - echo "Writing image definitions file..."
-      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "${IMAGE_REPO_NAME}" "${IMAGE_URI}" > imagedefinitions.json
+      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "${IMAGE_REPO_NAME}" "$IMAGE_URI" > imagedefinitions.json
       - cat imagedefinitions.json
 
 artifacts:
