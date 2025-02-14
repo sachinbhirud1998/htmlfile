@@ -33,8 +33,8 @@ phases:
     commands:
       - echo "Building Docker image..."
       - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-      - LATEST_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
-      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - LATEST_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest"
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
       - docker build -t "${IMAGE_URI}" .
       - docker tag "${IMAGE_URI}" "${LATEST_IMAGE_URI}"
       - echo "Image built and tagged successfully: ${IMAGE_URI}, ${LATEST_IMAGE_URI}"
@@ -70,7 +70,7 @@ phases:
         done
 
       - echo "Writing image definitions file..."
-      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "${IMAGE_REPO_NAME}" "${IMAGE_URI}" > imagedefinitions.json
+      - printf '[{"name":"%s","imageUri":"%s"}]' "${IMAGE_REPO_NAME}" "${IMAGE_URI}" > imagedefinitions.json
       - cat imagedefinitions.json
 
 artifacts:
