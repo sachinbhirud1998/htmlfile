@@ -12,21 +12,18 @@ phases:
   install:
     commands:
       - echo "Installing dependencies..."
-      - apt-get update -y && apt-get install -y apt-transport-https ca-certificates curl
+      - apt-get update -y
+      - apt-get install -y apt-transport-https ca-certificates curl
       - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
       - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-      - apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io
+      - apt-get update -y
+      - apt-get install -y docker-ce docker-ce-cli containerd.io
 
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR in all regions..."
       - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          echo "Logging into ECR in $REGION..."
-          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION"
-        done
-      - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
+        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
           echo "Logging into ECR in $REGION..."
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION"
         done
@@ -34,9 +31,9 @@ phases:
   build:
     commands:
       - echo "Building Docker image..."
-      - export IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-      - export LATEST_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
-      - export IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+      - LATEST_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest"
       - docker build -t "$IMAGE_URI" .
       - docker tag "$IMAGE_URI" "$LATEST_IMAGE_URI"
       - echo "Image built and tagged successfully: $IMAGE_URI, $LATEST_IMAGE_URI"
@@ -45,13 +42,7 @@ phases:
     commands:
       - echo "Pushing Docker images to all regions..."
       - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          echo "Pushing image to ECR in $REGION..."
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} || echo "Failed to push to $REGION"
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest || echo "Failed to push latest to $REGION"
-        done
-      - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
+        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
           echo "Pushing image to ECR in $REGION..."
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} || echo "Failed to push to $REGION"
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest || echo "Failed to push latest to $REGION"
@@ -59,15 +50,7 @@ phases:
 
       - echo "Starting deployment to Kubernetes..."
       - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          echo "Updating EKS cluster in $REGION..."
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION"
-          echo "Deploying to Kubernetes in $REGION..."
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || echo "K8s update failed in $REGION"
-          kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION"
-        done
-      - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
+        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
           echo "Updating EKS cluster in $REGION..."
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION"
           echo "Deploying to Kubernetes in $REGION..."
