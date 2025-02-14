@@ -3,7 +3,7 @@ version: 0.2
 env:
   variables:
     AWS_ACCOUNT_ID: "676206923960"
-    AWS_DEFAULT_REGION: "us-west-2"
+    AWS_DEFAULT_REGION: "us-east-1"
     IMAGE_REPO_NAME: "my-app-repo"
     AWS_DEPLOY_REGIONS_w: "us-west-2"
     AWS_DEPLOY_REGIONS_e: "us-east-1"
