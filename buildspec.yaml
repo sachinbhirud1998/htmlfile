@@ -12,8 +12,6 @@ phases:
   pre_build:
     commands:
       - "echo \"Checking AWS region variables...\""
-      - "echo \"AWS_DEPLOY_REGIONS_w: $AWS_DEPLOY_REGIONS_w\""
-      - "echo \"AWS_DEPLOY_REGIONS_e: $AWS_DEPLOY_REGIONS_e\""
       - "export AWS_DEPLOY_REGIONS_w=$(echo \"$AWS_DEPLOY_REGIONS_w\" | tr -d '[:space:]')"
       - "export AWS_DEPLOY_REGIONS_e=$(echo \"$AWS_DEPLOY_REGIONS_e\" | tr -d '[:space:]')"
       - "echo \"Logging in to Amazon ECR in all regions...\""
@@ -33,15 +31,19 @@ phases:
       - "echo \"Building Docker image...\""
       - "IMAGE_TAG=$(date +%Y%m%d%H%M%S)"
       - "IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+      - "LATEST_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest"
       - "docker build -t \"${IMAGE_URI}\" ."
+      - "docker tag \"${IMAGE_URI}\" \"${LATEST_IMAGE_URI}\""
       - "echo \"Tagging Docker image for deployment...\""
       - >
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
         done
       - >
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
         done
 
   post_build:
@@ -50,10 +52,12 @@ phases:
       - >
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
         done
       - >
         for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
         done
       - "echo \"Starting sequential deployment to Kubernetes clusters...\""
       - >
@@ -61,7 +65,7 @@ phases:
           echo "Updating EKS cluster in $REGION...";
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
           echo "Deploying to Kubernetes in $REGION...";
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1;
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || exit 1;
           kubectl rollout status deployment/my-deployment --timeout=90s || exit 1;
           echo "Deployment successful in $REGION.";
         done
@@ -70,12 +74,12 @@ phases:
           echo "Updating EKS cluster in $REGION...";
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
           echo "Deploying to Kubernetes in $REGION...";
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} --record || exit 1;
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || exit 1;
           kubectl rollout status deployment/my-deployment --timeout=90s || exit 1;
           echo "Deployment successful in $REGION.";
         done
       - "echo \"Writing image definitions file...\""
-      - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"${IMAGE_REPO_NAME}\" \"${IMAGE_URI}\" > imagedefinitions.json"
+      - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"${IMAGE_REPO_NAME}\" \"${LATEST_IMAGE_URI}\" > imagedefinitions.json"
       - "cat imagedefinitions.json"
 
 artifacts:
