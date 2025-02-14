@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-app-deployment
+  name: my-deployment
   labels:
     app: my-app
 spec:
-  replicas: 1
+  replicas: 2  # Adjust as needed
   selector:
     matchLabels:
       app: my-app
@@ -15,22 +15,24 @@ spec:
         app: my-app
     spec:
       containers:
-      - name: my-app
-        image: 676206923960.dkr.ecr.us-east-1.amazonaws.com/my-app-repo:latest
-        imagePullPolicy: Always  # Forces Kubernetes to always pull the latest image
-        ports:
-        - containerPort: 80
+        - name: my-container
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_DEFAULT_REGION>.amazonaws.com/<IMAGE_REPO_NAME>:latest
+          imagePullPolicy: Always  # Ensures the latest image is always pulled
+          ports:
+            - containerPort: 80  # Adjust based on your app
+      imagePullSecrets:
+        - name: ecr-secret  # Needed if using private ECR repo
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-app-service
+  name: my-service
 spec:
-  type: NodePort
   selector:
     app: my-app
   ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 80
-    nodePort: 30080  # Kubernetes will expose this port
+    - protocol: TCP
+      port: 80
+      targetPort: 80  # Adjust based on your app
+  type: LoadBalancer  # Change to ClusterIP or NodePort if needed
