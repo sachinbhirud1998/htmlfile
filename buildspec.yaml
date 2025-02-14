@@ -23,7 +23,7 @@ phases:
     commands:
       - echo "Logging in to Amazon ECR in all regions..."
       - |
-        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' ') $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           echo "Logging into ECR in $REGION..."
           aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION"
         done
@@ -35,31 +35,30 @@ phases:
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
       - LATEST_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest"
       - docker build -t "$IMAGE_URI" .
-      - docker tag "$IMAGE_URI" "$LATEST_IMAGE_URI"
+      - >
+          docker tag "$IMAGE_URI" "$LATEST_IMAGE_URI"
       - echo "Image built and tagged successfully: $IMAGE_URI, $LATEST_IMAGE_URI"
 
   post_build:
     commands:
       - echo "Pushing Docker images to all regions..."
       - |
-        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' ') $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           echo "Pushing image to ECR in $REGION..."
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG} || echo "Failed to push to $REGION"
           docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest || echo "Failed to push latest to $REGION"
         done
-
       - echo "Starting deployment to Kubernetes..."
       - |
-        for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' ') $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
           echo "Updating EKS cluster in $REGION..."
           aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION"
           echo "Deploying to Kubernetes in $REGION..."
           kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || echo "K8s update failed in $REGION"
           kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION"
         done
-
       - echo "Writing image definitions file..."
-      - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_REPO_NAME" "$IMAGE_URI" > imagedefinitions.json
+      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "$IMAGE_REPO_NAME" "$IMAGE_URI" > imagedefinitions.json
       - cat imagedefinitions.json
 
 artifacts:
