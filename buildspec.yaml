@@ -1,87 +1,38 @@
-version: 0.2
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+  labels:
+    app: my-app
+spec:
+  replicas: 2  # Adjust as needed
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-container
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_DEFAULT_REGION>.amazonaws.com/<IMAGE_REPO_NAME>:latest
+          imagePullPolicy: Always  # Ensures the latest image is always pulled
+          ports:
+            - containerPort: 80  # Adjust based on your app
+      imagePullSecrets:
+        - name: ecr-secret  # Needed if using private ECR repo
 
-phases:
-  install:
-    commands:
-      - "echo \"Installing dependencies...\""
-      - "apt-get update -y && apt-get install -y apt-transport-https ca-certificates curl"
-      - "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -"
-      - "add-apt-repository \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\""
-      - "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io"
-
-  pre_build:
-    commands:
-      - "echo \"Checking AWS region variables...\""
-      - "export AWS_DEPLOY_REGIONS_w=$(echo \"$AWS_DEPLOY_REGIONS_w\" | tr -d '[:space:]')"
-      - "export AWS_DEPLOY_REGIONS_e=$(echo \"$AWS_DEPLOY_REGIONS_e\" | tr -d '[:space:]')"
-      - "echo \"Logging in to Amazon ECR in all regions...\""
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          echo "Logging into ECR in $REGION...";
-          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
-        done
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
-          echo "Logging into ECR in $REGION...";
-          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com;
-        done
-
-  build:
-    commands:
-      - "echo \"Building Docker image...\""
-      - "IMAGE_TAG=$(date +%Y%m%d%H%M%S)"
-      - "IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
-      - "LATEST_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest"
-      - "docker build -t \"${IMAGE_URI}\" ."
-      - "docker tag \"${IMAGE_URI}\" \"${LATEST_IMAGE_URI}\""
-      - "echo \"Tagging Docker image for deployment...\""
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
-          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
-        done
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
-          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
-          docker tag \"${IMAGE_URI}\" ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
-        done
-
-  post_build:
-    commands:
-      - "echo \"Pushing Docker image to all regions...\""
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
-        done
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG};
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest;
-        done
-      - "echo \"Starting sequential deployment to Kubernetes clusters...\""
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w" | tr ',' ' '); do
-          echo "Updating EKS cluster in $REGION...";
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
-          echo "Deploying to Kubernetes in $REGION...";
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || exit 1;
-          kubectl rollout status deployment/my-deployment --timeout=90s || exit 1;
-          echo "Deployment successful in $REGION.";
-        done
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_e" | tr ',' ' '); do
-          echo "Updating EKS cluster in $REGION...";
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || exit 1;
-          echo "Deploying to Kubernetes in $REGION...";
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/${IMAGE_REPO_NAME}:latest --record || exit 1;
-          kubectl rollout status deployment/my-deployment --timeout=90s || exit 1;
-          echo "Deployment successful in $REGION.";
-        done
-      - "echo \"Writing image definitions file...\""
-      - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"${IMAGE_REPO_NAME}\" \"${LATEST_IMAGE_URI}\" > imagedefinitions.json"
-      - "cat imagedefinitions.json"
-
-artifacts:
-  files:
-    - imagedefinitions.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80  # Adjust based on your app
+  type: LoadBalancer  # Change to ClusterIP or NodePort if needed
