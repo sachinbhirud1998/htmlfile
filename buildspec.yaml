@@ -26,26 +26,22 @@ phases:
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR in all regions..."
-      - |
-        for REGION in "${AWS_DEPLOY_REGIONS_w}" "${AWS_DEPLOY_REGIONS_e}"; do
-          echo "Logging into ECR in $REGION"
-          aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com" || echo "ECR login failed in $REGION"
-        done
+      - for REGION in ${AWS_DEPLOY_REGIONS_w} ${AWS_DEPLOY_REGIONS_e}; do echo "Logging into ECR in $REGION"; aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION"; done
 
   build:
     commands:
       - echo "Building Docker image..."
       - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-      - UNIQUE_LATEST_TAG="latest-${IMAGE_TAG}"
-      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
-      - docker build -t "${IMAGE_URI}" .
+      - UNIQUE_LATEST_TAG=latest-${IMAGE_TAG}
+      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - docker build -t ${IMAGE_URI} .
       - echo "Image built: ${IMAGE_URI}"
 
   post_build:
     commands:
       - echo "Pushing Docker images to ECR..."
       - |
-        for REGION in "${AWS_DEPLOY_REGIONS_w}" "${AWS_DEPLOY_REGIONS_e}"; do
+        for REGION in ${AWS_DEPLOY_REGIONS_w} ${AWS_DEPLOY_REGIONS_e}; do
           if [ "$REGION" = "us-west-2" ]; then
             REPO="$IMAGE_REPO_NAME_W"
           elif [ "$REGION" = "us-east-1" ]; then
@@ -54,14 +50,14 @@ phases:
             REPO="$IMAGE_REPO_NAME"
           fi
           echo "Tagging and pushing image to $REGION ($REPO)..."
-          docker tag "${IMAGE_URI}" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}"
-          docker tag "${IMAGE_URI}" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}"
-          docker push "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}" || echo "Failed to push tag $IMAGE_TAG in $REGION"
-          docker push "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}" || echo "Failed to push tag $UNIQUE_LATEST_TAG in $REGION"
+          docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}
+          docker tag ${IMAGE_URI} ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG} || echo "Failed to push tag $IMAGE_TAG in $REGION"
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} || echo "Failed to push tag $UNIQUE_LATEST_TAG in $REGION"
         done
       - echo "Deploying updated image to Kubernetes..."
       - |
-        for REGION in "${AWS_DEPLOY_REGIONS_w}" "${AWS_DEPLOY_REGIONS_e}"; do
+        for REGION in ${AWS_DEPLOY_REGIONS_w} ${AWS_DEPLOY_REGIONS_e}; do
           if [ "$REGION" = "us-west-2" ]; then
             REPO="$IMAGE_REPO_NAME_W"
           elif [ "$REGION" = "us-east-1" ]; then
@@ -70,9 +66,9 @@ phases:
             REPO="$IMAGE_REPO_NAME"
           fi
           echo "Updating EKS cluster in $REGION..."
-          aws eks update-kubeconfig --region "$REGION" --name "my-cluster-$REGION" --alias "my-cluster-$REGION" || echo "EKS config update failed in $REGION"
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION"
           echo "Deploying image in $REGION from repository $REPO..."
-          kubectl set image deployment/my-deployment "my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}" --record || echo "K8s set image failed in $REGION"
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} --record || echo "K8s set image failed in $REGION"
           kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION"
         done
       - echo "Writing image definitions file..."
