@@ -68,7 +68,7 @@ phases:
             REPO="$IMAGE_REPO_NAME";
           fi;
           echo "Updating EKS cluster in $REGION...";
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION";
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION --role arn:aws:iam::676206923960:role/service-role/codebuild-Test-service-role || echo "EKS config update failed in $REGION";
           echo "Deploying image in $REGION from repository $REPO...";
           kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} --record || echo "K8s set image failed in $REGION";
           kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION";
@@ -80,3 +80,4 @@ phases:
 artifacts:
   files:
     - imagedefinitions.json
+
