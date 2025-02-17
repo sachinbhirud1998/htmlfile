@@ -3,84 +3,86 @@ version: 0.2
 env:
   variables:
     AWS_ACCOUNT_ID: "676206923960"
-    AWS_DEFAULT_REGION: "us-east-1"
-    # Generic repo name (if needed) – not used in push loops
+    AWS_DEFAULT_REGION: "us-west-2"
     IMAGE_REPO_NAME: "my-app-repo"
-    # Region-specific repository names:
     IMAGE_REPO_NAME_W: "my-app-repo-w"
     IMAGE_REPO_NAME_E: "my-app-repo-e"
-    AWS_DEPLOY_REGIONS_w: "us-west-2"
-    AWS_DEPLOY_REGIONS_e: "us-east-1"
+    AWS_DEPLOY_REGIONS_W: "us-west-2"
+    AWS_DEPLOY_REGIONS_E: "us-east-1"
+    EKS_ROLE_ARN: "arn:aws:iam::676206923960:role/YOUR_ROLE"
 
 phases:
   install:
     commands:
-      - "echo Installing dependencies..."
-      - "apt-get update -y"
-      - "apt-get install -y apt-transport-https ca-certificates curl"
-      - "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -"
-      - "add-apt-repository \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\""
-      - "apt-get update -y"
-      - "apt-get install -y docker-ce docker-ce-cli containerd.io"
-      
+      - echo "Installing dependencies..."
+      - apt-get update -y
+      - apt-get install -y apt-transport-https ca-certificates curl
+      - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+      - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+      - apt-get update -y
+      - apt-get install -y docker-ce docker-ce-cli containerd.io
+
   pre_build:
     commands:
-      - "echo Logging in to Amazon ECR in all regions..."
-      - >
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e"); do
-          echo "Logging into ECR in $REGION...";
-          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION";
+      - echo "Logging into Amazon ECR in all regions..."
+      - |
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_W $AWS_DEPLOY_REGIONS_E"); do
+          echo "Logging into ECR in $REGION..."
+          aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo "ECR login failed in $REGION"
         done
-      
+
   build:
     commands:
-      - "echo Building Docker image..."
-      - "IMAGE_TAG=$(date +%Y%m%d%H%M%S)"
-      - "UNIQUE_LATEST_TAG=latest-${IMAGE_TAG}"
-      # Build the image in the default region (us-east-1)
-      - "IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
-      - "docker build -t \"$IMAGE_URI\" ."
-      - "echo Image built: $IMAGE_URI"
-      
+      - echo "Building Docker image..."
+      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+      - UNIQUE_LATEST_TAG=latest-${IMAGE_TAG}
+      - IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      - docker build -t "$IMAGE_URI" .
+      - echo "Image built: $IMAGE_URI"
+
   post_build:
     commands:
-      - "echo Pushing Docker images to region-specific repositories..."
+      - echo "Pushing Docker images to region-specific repositories..."
       - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e"); do
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_W $AWS_DEPLOY_REGIONS_E"); do
           if [ "$REGION" = "us-west-2" ]; then
-            REPO="$IMAGE_REPO_NAME_W";
+            REPO="$IMAGE_REPO_NAME_W"
           elif [ "$REGION" = "us-east-1" ]; then
-            REPO="$IMAGE_REPO_NAME_E";
+            REPO="$IMAGE_REPO_NAME_E"
           else
-            REPO="$IMAGE_REPO_NAME";
-          fi;
-          echo "Tagging image for $REGION with repository $REPO...";
-          docker tag "$IMAGE_URI" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}";
-          docker tag "$IMAGE_URI" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}";
-          echo "Pushing image to $REGION (tag: $IMAGE_TAG)...";
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG} || echo "Failed to push tag $IMAGE_TAG in $REGION";
-          echo "Pushing image to $REGION (tag: $UNIQUE_LATEST_TAG)...";
-          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} || echo "Failed to push tag $UNIQUE_LATEST_TAG in $REGION";
+            REPO="$IMAGE_REPO_NAME"
+          fi
+          echo "Tagging image for $REGION with repository $REPO..."
+          docker tag "$IMAGE_URI" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}"
+          docker tag "$IMAGE_URI" "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}"
+          echo "Pushing image to $REGION (tag: $IMAGE_TAG)..."
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG} || echo "Failed to push tag $IMAGE_TAG in $REGION"
+          echo "Pushing image to $REGION (tag: $UNIQUE_LATEST_TAG)..."
+          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} || echo "Failed to push tag $UNIQUE_LATEST_TAG in $REGION"
         done
-      - "echo Deploying updated image to Kubernetes..."
+      
+      - echo "Deploying updated image to Kubernetes..."
       - |
-        for REGION in $(echo "$AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e"); do
+        for REGION in $(echo "$AWS_DEPLOY_REGIONS_W $AWS_DEPLOY_REGIONS_E"); do
           if [ "$REGION" = "us-west-2" ]; then
-            REPO="$IMAGE_REPO_NAME_W";
+            REPO="$IMAGE_REPO_NAME_W"
           elif [ "$REGION" = "us-east-1" ]; then
-            REPO="$IMAGE_REPO_NAME_E";
+            REPO="$IMAGE_REPO_NAME_E"
           else
-            REPO="$IMAGE_REPO_NAME";
-          fi;
-          echo "Updating EKS cluster in $REGION...";
-          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION || echo "EKS config update failed in $REGION";
-          echo "Deploying image in $REGION from repository $REPO...";
-          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} --record || echo "K8s set image failed in $REGION";
-          kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION";
+            REPO="$IMAGE_REPO_NAME"
+          fi
+          echo "Updating EKS cluster in $REGION..."
+          aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --role-arn $EKS_ROLE_ARN --alias my-cluster-$REGION || { echo "EKS config update failed in $REGION"; exit 1; }
+          echo "Checking if we can connect to the cluster..."
+          kubectl get nodes || { echo "Failed to get cluster nodes in $REGION"; exit 1; }
+          echo "Deploying image in $REGION from repository $REPO..."
+          kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} --record || echo "K8s set image failed in $REGION"
+          kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION"
         done
-      - "echo Writing image definitions file..."
-      - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"$IMAGE_REPO_NAME\" \"$IMAGE_URI\" > imagedefinitions.json"
-      - "cat imagedefinitions.json"
+
+      - echo "Writing image definitions file..."
+      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "$IMAGE_REPO_NAME" "$IMAGE_URI" > imagedefinitions.json
+      - cat imagedefinitions.json
 
 artifacts:
   files:
