@@ -57,6 +57,7 @@ phases:
           docker push "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}" || echo "Failed to push tag $IMAGE_TAG in $REGION";
           docker push "${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}" || echo "Failed to push tag $UNIQUE_LATEST_TAG in $REGION";
         done
+
       - echo "Deploying updated image to Kubernetes..."
       - |
         for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do
@@ -73,12 +74,14 @@ phases:
           kubectl set image deployment/my-deployment my-container=${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} --record || echo "K8s set image failed in $REGION";
           kubectl rollout status deployment/my-deployment --timeout=90s || echo "K8s rollout failed in $REGION";
         done
+
       - echo "Writing image definitions file..."
-      - printf '[{"name":"%s","imageUri":"%s"}]' "$IMAGE_REPO_NAME" "$IMAGE_URI" > imagedefinitions.json
+      - printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' "$IMAGE_REPO_NAME" "$IMAGE_URI" > imagedefinitions.json
       - cat imagedefinitions.json
 
 artifacts:
   files:
     - imagedefinitions.json
+
 
 
