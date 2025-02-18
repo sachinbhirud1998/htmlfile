@@ -1,194 +1,338 @@
-## Cross-Region Deployable Pipeline Creation Guide
+# Cross-Region Deployable Pipeline
 
-### Introduction
-This document provides comprehensive instructions for creating an automated pipeline using AWS CodeBuild and CodePipeline. The pipeline builds a Docker image from a GitHub repository (https://github.com/sachinbhirud1998/htmlfile.git), pushes it to Amazon ECR, and deploys it to Amazon EKS clusters in multiple AWS regions—all from a single branch. The configuration includes proper IAM roles, cross-region deployment steps, and essential EKS add-ons.
+A comprehensive guide for building an automated CI/CD pipeline that deploys to multiple AWS regions.
 
----
+## Overview
+
+This project creates an automated pipeline using AWS CodeBuild and CodePipeline. The pipeline builds a Docker image from this repository, pushes it to Amazon ECR, and deploys it to Amazon EKS clusters in multiple AWS regions—all from a single branch.
 
 ## Table of Contents
-1. Getting Started in the AWS Console
-2. Installing Required Tools
-3. Configuring IAM Roles and Policies
-4. Creating Amazon ECR Repositories
-5. Creating Amazon EKS Clusters in Multiple Regions
-6. Installing EKS Add-ons
-7. Preparing Configuration Files
-8. Creating and Deploying the Pipeline
-9. Verifying the Deployment
-10. Troubleshooting Tips
 
----
+1. [Prerequisites](#prerequisites)
+2. [AWS Infrastructure Setup](#aws-infrastructure-setup)
+3. [IAM Roles and Policies](#iam-roles-and-policies)
+4. [Amazon ECR Repository Setup](#amazon-ecr-repository-setup)
+5. [Amazon EKS Cluster Setup](#amazon-eks-cluster-setup)
+6. [EKS Add-ons Installation](#eks-add-ons-installation)
+7. [Configuration Files](#configuration-files)
+8. [Pipeline Deployment](#pipeline-deployment)
+9. [Verification](#verification)
+10. [Troubleshooting](#troubleshooting)
 
-## Getting Started in the AWS Console
-1. **Log in to the AWS Management Console:**
-   - Open your web browser and navigate to [AWS Console](https://console.aws.amazon.com/)
-   - Enter your credentials to access your AWS account
-2. **Set your default region:**
-   - In the top right corner of the console, select your preferred region (e.g., `us-west-2`)
+## Prerequisites
 
----
+Ensure you have the following:
 
-## Installing Required Tools
-Ensure the following tools are installed on your local machine if you need to perform administrative tasks outside the console:
-- **AWS CLI**: [Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
-- **kubectl**: [Installation Guide](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+1. An AWS account with appropriate permissions
+2. A GitHub account with this repository forked or cloned
+3. The following tools installed locally (optional for AWS Console operations):
+   - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
+   - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 
----
+## AWS Infrastructure Setup
 
-## Configuring IAM Roles and Policies
-### Create a CodeBuild Service Role
-1. **Navigate to the IAM Console:**
-   - Click on "Services" in the AWS Console
-   - Select "IAM" under the "Security, Identity, & Compliance" section
-2. **Create a New Role:**
-   - Click "Roles" in the left navigation pane
-   - Click "Create role"
-   - Select "AWS service" as the trusted entity type
-   - Choose "CodeBuild" from the use case list
-   - Click "Next: Permissions"
-3. **Attach Policies:**
-   - Attach `AmazonEC2ContainerRegistryPowerUser`
-   - Attach `AmazonEKSClusterPolicy`
-   - Click "Next: Review"
-   - Enter a role name (e.g., `CodeBuildServiceRole-MultiRegion`)
-   - Click "Create role"
-4. **Add an Inline Policy:**
-   - Open the created role, go to "Permissions" > "Add inline policy"
-   - Select "JSON" tab and add the following:
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Action": [
-           "ecr:BatchCheckLayerAvailability",
-           "ecr:GetDownloadUrlForLayer",
-           "ecr:GetAuthorizationToken",
-           "ecr:PutImage",
-           "ecr:InitiateLayerUpload",
-           "ecr:UploadLayerPart",
-           "ecr:CompleteLayerUpload",
-           "eks:DescribeCluster",
-           "eks:UpdateClusterConfig",
-           "eks:ListClusters",
-           "eks:DescribeAddon",
-           "eks:CreateAddon",
-           "eks:UpdateAddon",
-           "sts:AssumeRole",
-           "cloudwatch:PutMetricData",
-           "logs:CreateLogGroup",
-           "logs:CreateLogStream",
-           "logs:PutLogEvents",
-           "codebuild:CreateReportGroup",
-           "codebuild:CreateReport",
-           "codebuild:UpdateReport",
-           "codebuild:BatchPutTestCases",
-           "s3:PutObject",
-           "s3:GetObject",
-           "s3:GetObjectVersion"
-         ],
-         "Resource": "*"
-       }
-     ]
-   }
-   ```
-   - Click "Review policy"
-   - Enter a name (e.g., `CodeBuildMultiRegionDeployPolicy`)
-   - Click "Create policy"
+Log in to the AWS Management Console at https://console.aws.amazon.com/ and set your default region (e.g., `us-west-2`).
 
----
+## IAM Roles and Policies
 
-## Creating Amazon ECR Repositories
-### Create ECR Repositories in Each Target Region
-1. **Navigate to Amazon ECR:**
-   - In the AWS Console, search for "ECR"
-   - Click "Elastic Container Registry"
-2. **Create Repository in `us-west-2`:**
-   - Ensure you're in `us-west-2`
-   - Click "Repositories" > "Create repository"
-   - Enter `my-app-repo-w` for the repository name
-   - Click "Create repository"
-3. **Create Repository in `us-east-1`:**
-   - Switch to `us-east-1` and repeat the above steps with repository name `my-app-repo-e`
+Create a CodeBuild service role with the necessary permissions:
 
----
+1. Navigate to IAM and create a new role for CodeBuild
+2. Attach the following policies:
+   - `AmazonEC2ContainerRegistryPowerUser`
+   - `AmazonEKSClusterPolicy`
+3. Add an inline policy with the following permissions:
 
-## Creating Amazon EKS Clusters in Multiple Regions
-### Create an EKS Cluster in `us-west-2`
-1. **Navigate to Amazon EKS:**
-   - Ensure you're in `us-west-2`
-   - Search for "EKS" and select "Elastic Kubernetes Service"
-2. **Create a new cluster:**
-   - Click "Add cluster" > "Create"
-   - Name: `my-cluster-us-west-2`
-   - Select latest Kubernetes version
-   - Configure networking, logging, and review settings
-   - Click "Create"
-3. **Create a Node Group:**
-   - Once the cluster is active, go to "Compute" > "Add node group"
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:GetAuthorizationToken",
+        "ecr:PutImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "eks:DescribeCluster",
+        "eks:UpdateClusterConfig",
+        "eks:ListClusters",
+        "eks:DescribeAddon",
+        "eks:CreateAddon",
+        "eks:UpdateAddon",
+        "sts:AssumeRole",
+        "cloudwatch:PutMetricData",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "codebuild:CreateReportGroup",
+        "codebuild:CreateReport",
+        "codebuild:UpdateReport",
+        "codebuild:BatchPutTestCases",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+## Amazon ECR Repository Setup
+
+Create ECR repositories in each target region:
+
+### us-west-2 Region
+1. Navigate to ECR in the us-west-2 region
+2. Create a private repository named `my-app-repo-w`
+
+### us-east-1 Region
+1. Switch to the us-east-1 region
+2. Create a private repository named `my-app-repo-e`
+
+## Amazon EKS Cluster Setup
+
+### us-west-2 Cluster
+1. Navigate to EKS in the us-west-2 region
+2. Create a new cluster named `my-cluster-us-west-2`
+3. Configure networking with public and private endpoints
+4. Create a node group with:
    - Name: `my-nodes`
-   - Instance type: `t3.medium`, Min size: `2`, Max size: `4`, Desired size: `2`
-   - Click "Create"
+   - Instance type: `t3.medium`
+   - Min size: 2, Max size: 4, Desired size: 2
 
-### Create an EKS Cluster in `us-east-1`
-- Follow the same steps as above with name `my-cluster-us-east-1`
+### us-east-1 Cluster
+1. Switch to the us-east-1 region
+2. Create a new cluster named `my-cluster-us-east-1`
+3. Configure networking with public and private endpoints
+4. Create a node group with the same settings as above
 
+## EKS Add-ons Installation
+
+Install the following add-ons on each cluster (us-west-2 and us-east-1):
+
+1. CoreDNS
+2. kube-proxy
+3. Amazon VPC CNI
+4. AWS Load Balancer Controller
+5. Amazon EFS CSI Driver
+6. Metrics Server
+
+## Configuration Files
+
+### buildspec.yml
+
+Create a `buildspec.yml` file in your repository:
+
+```yaml
+version: 0.2
+env:
+  variables:
+    AWS_ACCOUNT_ID: "676206923960"
+    AWS_DEFAULT_REGION: "us-west-2"
+    IMAGE_REPO_NAME: "my-app-repo"
+    IMAGE_REPO_NAME_W: "my-app-repo-w"
+    IMAGE_REPO_NAME_E: "my-app-repo-e"
+    AWS_DEPLOY_REGIONS_w: "us-west-2"
+    AWS_DEPLOY_REGIONS_e: "us-east-1"
+phases:
+  install:
+    runtime-versions:
+      docker: latest
+    commands:
+      - "echo Installing dependencies..."
+      - "apt-get update -y"
+      - "apt-get install -y apt-transport-https ca-certificates curl"
+      - "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -"
+      - "add-apt-repository \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\""
+      - "apt-get update -y"
+      - "apt-get install -y docker-ce docker-ce-cli containerd.io"
+      - curl -o aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.22.6/bin/linux/amd64/aws-iam-authenticator
+      - chmod +x ./aws-iam-authenticator
+      - mv ./aws-iam-authenticator /usr/local/bin/aws-iam-authenticator
+      - aws --version
+      - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      - chmod +x kubectl
+      - mv kubectl /usr/local/bin/
+      - kubectl version --client
+  pre_build:
+    commands:
+      - "echo Logging in to Amazon ECR in all regions..."
+      - "for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do echo \"Logging into ECR in $REGION...\"; aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com || echo \"ECR login failed in $REGION\"; done"
+  build:
+    commands:
+      - "echo Building Docker image..."
+      - "IMAGE_TAG=$(date +%Y%m%d%H%M%S)"
+      - "UNIQUE_LATEST_TAG=latest-${IMAGE_TAG}"
+      - "IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+      - "docker build -t $IMAGE_URI ."
+      - "echo Image built: $IMAGE_URI"
+  post_build:
+    commands:
+      - "echo Pushing Docker images to ECR..."
+      - "for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do if [ \"$REGION\" = \"us-west-2\" ]; then REPO=\"$IMAGE_REPO_NAME_W\"; elif [ \"$REGION\" = \"us-east-1\" ]; then REPO=\"$IMAGE_REPO_NAME_E\"; else REPO=\"$IMAGE_REPO_NAME\"; fi; echo \"Tagging and pushing image to $REGION ($REPO)...\"; docker tag $IMAGE_URI ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG}; docker tag $IMAGE_URI ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}; docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${IMAGE_TAG} || echo \"Failed to push tag $IMAGE_TAG in $REGION\"; docker push ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG} || echo \"Failed to push tag $UNIQUE_LATEST_TAG in $REGION\"; done"
+      - "echo Creating deployment YAML file..."
+      - "mkdir -p kubernetes"
+      - "for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do if [ \"$REGION\" = \"us-west-2\" ]; then REPO=\"$IMAGE_REPO_NAME_W\"; elif [ \"$REGION\" = \"us-east-1\" ]; then REPO=\"$IMAGE_REPO_NAME_E\"; else REPO=\"$IMAGE_REPO_NAME\"; fi; echo \"Creating deployment file for $REGION...\"; cat > kubernetes/deployment-$REGION.yaml << EOF"
+      - "apiVersion: apps/v1"
+      - "kind: Deployment"
+      - "metadata:"
+      - "  name: my-deployment"
+      - "  labels:"
+      - "    app: my-app"
+      - "spec:"
+      - "  replicas: 2"
+      - "  selector:"
+      - "    matchLabels:"
+      - "      app: my-app"
+      - "  template:"
+      - "    metadata:"
+      - "      labels:"
+      - "        app: my-app"
+      - "    spec:"
+      - "      containers:"
+      - "        - name: my-container"
+      - "          image: ${AWS_ACCOUNT_ID}.dkr.ecr.$REGION.amazonaws.com/$REPO:${UNIQUE_LATEST_TAG}"
+      - "          imagePullPolicy: Always"
+      - "          ports:"
+      - "            - containerPort: 80"
+      - "---"
+      - "apiVersion: v1"
+      - "kind: Service"
+      - "metadata:"
+      - "  name: my-service"
+      - "spec:"
+      - "  selector:"
+      - "    app: my-app"
+      - "  ports:"
+      - "    - protocol: TCP"
+      - "      port: 80"
+      - "      targetPort: 80"
+      - "      nodePort: 30080"
+      - "  type: NodePort"
+      - "EOF"
+      - "done"
+      - "echo Deploying updated image to Kubernetes..."
+      - "for REGION in $AWS_DEPLOY_REGIONS_w $AWS_DEPLOY_REGIONS_e; do if [ \"$REGION\" = \"us-west-2\" ]; then REPO=\"$IMAGE_REPO_NAME_W\"; elif [ \"$REGION\" = \"us-east-1\" ]; then REPO=\"$IMAGE_REPO_NAME_E\"; else REPO=\"$IMAGE_REPO_NAME\"; fi; echo \"Updating EKS cluster in $REGION...\"; aws eks update-kubeconfig --region $REGION --name my-cluster-$REGION --alias my-cluster-$REGION --role-arn arn:aws:iam::${AWS_ACCOUNT_ID}:role/service-role/codebuild-Test-service-role || echo \"EKS config update failed in $REGION\"; echo \"Applying deployment in $REGION...\"; kubectl apply -f kubernetes/deployment-$REGION.yaml --context my-cluster-$REGION || echo \"K8s apply failed in $REGION\"; kubectl rollout status deployment/my-deployment --timeout=90s --context my-cluster-$REGION || echo \"K8s rollout status failed in $REGION\"; done"
+      - "echo Writing image definitions file..."
+      - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"$IMAGE_REPO_NAME\" \"$IMAGE_URI\" > imagedefinitions.json"
+      - "cat imagedefinitions.json"
+artifacts:
+  files:
+    - imagedefinitions.json
+    - kubernetes/*
+```
+
+### Kubernetes Deployment File Template
+
+Create a `deployment.yaml` template:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+  labels:
+    app: my-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-container
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<REPO>:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30080
+  type: NodePort
+```
 
-## Installing EKS Add-ons
-- Install the following add-ons in each cluster:
-  - CoreDNS
-  - kube-proxy
-  - Amazon VPC CNI
-  - AWS Load Balancer Controller
-  - Amazon EFS CSI Driver
-  - Metrics Server
+## Pipeline Deployment
 
----
+Create a pipeline in AWS CodePipeline:
 
-## Preparing Configuration Files
-### `buildspec.yml`
-- Contains commands for building, tagging, and pushing Docker images to ECR.
-- Defines deployment files dynamically.
-- Uses `kubectl` to apply Kubernetes manifests to EKS clusters.
-
-### `deployment.yaml`
-- Defines Kubernetes deployment and service specifications.
-
----
-
-## Creating and Deploying the Pipeline
-### Create a Pipeline in AWS CodePipeline
-1. **Open CodePipeline Console:**
-   - Search for "CodePipeline" and select it
-2. **Create a New Pipeline:**
-   - Name: `multi-region-deployment-pipeline`
-   - Service role: "New service role"
-3. **Add Source Stage:**
-   - Provider: "GitHub"
+1. Open the CodePipeline console and create a new pipeline
+2. Name: `multi-region-deployment-pipeline`
+3. Source Stage:
+   - Provider: GitHub (Version 2)
    - Repository: `sachinbhirud1998/htmlfile`
    - Branch: `main`
-4. **Add Build Stage:**
-   - Provider: "AWS CodeBuild"
+   - Detection: GitHub webhooks
+4. Build Stage:
+   - Provider: AWS CodeBuild
    - Region: `us-west-2`
    - Project name: `multi-region-build-project`
+   - Environment:
+     - Ubuntu, Standard runtime
+     - Managed image (latest version)
+     - Privileged mode: checked
+   - Buildspec: Use a buildspec file
+   - Environment variables:
+     - `AWS_ACCOUNT_ID`: `676206923960`
+     - `AWS_DEFAULT_REGION`: `us-west-2`
+     - `IMAGE_REPO_NAME`: `my-app-repo`
+     - `IMAGE_REPO_NAME_W`: `my-app-repo-w`
+     - `IMAGE_REPO_NAME_E`: `my-app-repo-e`
+     - `AWS_DEPLOY_REGIONS_w`: `us-west-2`
+     - `AWS_DEPLOY_REGIONS_e`: `us-east-1`
+5. Skip the Deploy Stage (handled by the build stage)
+6. Review and create the pipeline
 
----
+## Verification
 
-## Verifying the Deployment
-- Use `kubectl get pods --all-namespaces` to verify running pods.
-- Check services with `kubectl get svc`.
+After your pipeline runs successfully:
 
----
+1. Check the deployment status in each region:
+   - Navigate to EKS in each region
+   - Verify that deployments and services are running
+2. Access the application:
+   - Get the public IP of an EKS node
+   - Open `http://<node-public-ip>:30080` in a browser
+   - Verify that your application is accessible
 
-## Troubleshooting Tips
-- Ensure IAM roles have correct permissions.
-- Verify ECR login is successful.
-- Check CodeBuild logs for errors.
-- Use `kubectl logs` to debug pod issues.
+## Troubleshooting
 
----
+### Pipeline Failures
+- In CodePipeline, check the failed stage details
+- Review CodeBuild logs for specific errors
+- Common issues:
+  - ECR login issues
+  - Docker build failures
+  - Kubernetes deployment errors
 
-This guide enables seamless multi-region deployment using AWS services, ensuring scalability and redundancy.
+### EKS Issues
+- Check cluster status and health
+- Review node group status
+- Verify add-on status
 
+### Service Accessibility Issues
+- Confirm NodePort service creation
+- Check that port 30080 is allowed in node security groups
+
+### Repository Issues
+- Verify GitHub webhook settings
+- Check branch updates
+- Try manually starting the pipeline
